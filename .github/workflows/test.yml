@@ -34,12 +34,14 @@ jobs:
         dotnet-version: '10.0.x'
 
     - name: Restore dependencies
-      run: dotnet restore ${{ env.TESTS_PROJECT }}/${{ env.TESTS_PROJECT }}.csproj
+      run: dotnet restore ${{ env.PROJECT_NAME }}.slnx -r linux-x64 --locked-mode
 
+    # Scans the whole solution: the test project's packages execute during the
+    # build, so leaving them unscanned is the widest hole in a build-time audit.
     - name: Audit dependencies (fail on any vulnerability, transitive included)
       run: |
         set -o pipefail
-        dotnet list ${{ env.PROJECT_NAME }}/${{ env.PROJECT_NAME }}.csproj package --vulnerable --include-transitive 2>&1 | tee audit.log
+        dotnet list ${{ env.PROJECT_NAME }}.slnx package --vulnerable --include-transitive 2>&1 | tee audit.log
         if grep -E '^\s+>' audit.log; then
           echo "::error::Vulnerable packages detected"
           exit 1

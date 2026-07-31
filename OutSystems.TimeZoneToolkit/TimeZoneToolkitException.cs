@@ -16,14 +16,5 @@ namespace OutSystems.TimeZoneToolkit
         public TimeZoneToolkitException(string message) : base(message)
         {
         }
-
-        /// <summary>
-        /// Creates a new <see cref="TimeZoneToolkitException"/> that wraps an underlying error.
-        /// </summary>
-        /// <param name="message">The validation message shown to the OutSystems developer.</param>
-        /// <param name="innerException">The error that caused this exception.</param>
-        public TimeZoneToolkitException(string message, Exception innerException) : base(message, innerException)
-        {
-        }
     }
 }
