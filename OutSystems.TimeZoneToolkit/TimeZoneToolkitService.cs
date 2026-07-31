@@ -54,19 +54,21 @@ namespace OutSystems.TimeZoneToolkit
         /// <inheritdoc />
         public List<TimeZoneRecord> GetSystemTimeZones()
         {
-            IReadOnlyCollection<TimeZoneInfo> timeZones = TimeZoneInfo.GetSystemTimeZones();
+            List<TimeZoneInfo> timeZones = new(TimeZoneInfo.GetSystemTimeZones());
+
+            // Sorted on the standard offset, which is the one printed inside DisplayName, so the
+            // labels a user reads in a dropdown run in order. Sorting on the current offset
+            // instead puts every zone that is on daylight saving time today out of place.
+            timeZones.Sort((left, right) =>
+                left.BaseUtcOffset == right.BaseUtcOffset
+                    ? string.CompareOrdinal(left.DisplayName, right.DisplayName)
+                    : left.BaseUtcOffset.CompareTo(right.BaseUtcOffset));
 
             List<TimeZoneRecord> records = new(timeZones.Count);
             foreach (TimeZoneInfo timeZone in timeZones)
             {
                 records.Add(ToRecord(timeZone));
             }
-
-            // Sorted on the same offset the record reports, so a dropdown reads in order.
-            records.Sort((left, right) =>
-                left.UtcOffset == right.UtcOffset
-                    ? string.CompareOrdinal(left.DisplayName, right.DisplayName)
-                    : left.UtcOffset.CompareTo(right.UtcOffset));
 
             return records;
         }
@@ -90,7 +92,7 @@ namespace OutSystems.TimeZoneToolkit
             if (!converted || string.IsNullOrEmpty(iana))
             {
                 throw new TimeZoneToolkitException(
-                    $"{nameof(Timezone)} '{windowsId}' is not a known Windows time zone identifier" +
+                    $"{nameof(Timezone)} '{ForMessage(windowsId)}' is not a known Windows time zone identifier" +
                     (territory is null ? string.Empty : $" for country '{territory}'") +
                     ". Example: \"Eastern Standard Time\".");
             }
@@ -106,17 +108,28 @@ namespace OutSystems.TimeZoneToolkit
                 nameof(IANATimezone),
                 "Provide an IANA time zone name (for example, \"America/New_York\").");
 
-            if (!TZConvert.TryIanaToWindows(ianaName, out string? windowsId) || string.IsNullOrEmpty(windowsId))
+            // Resolve the IANA name directly. Mapping it to a Windows identifier first would be
+            // lossy, because one Windows identifier covers many IANA zones: Antarctica/Casey
+            // would come back as Pacific/Guadalcanal, three hours away.
+            if (!TZConvert.TryGetIanaCanonicalName(ianaName, out string? canonicalName)
+                || string.IsNullOrEmpty(canonicalName))
             {
                 throw new TimeZoneToolkitException(
-                    $"{nameof(IANATimezone)} '{ianaName}' is not a known IANA time zone name. Example: \"America/New_York\".");
+                    $"{nameof(IANATimezone)} '{ForMessage(ianaName)}' is not a known IANA time zone name. Example: \"America/New_York\".");
             }
 
-            return ToRecord(ResolveTimeZone(windowsId, nameof(IANATimezone)));
+            return ToRecord(ResolveTimeZone(canonicalName, nameof(IANATimezone)));
         }
 
         /// <summary>
-        /// Rejects empty input and returns the trimmed value.
+        /// The longest identifier in the database is 32 characters, so anything beyond this is
+        /// not a near miss worth echoing back. The bound keeps a large payload out of the error
+        /// message, and therefore out of the app's error log.
+        /// </summary>
+        private const int MaximumIdentifierLength = 64;
+
+        /// <summary>
+        /// Rejects empty or oversized input and returns the trimmed value.
         /// </summary>
         private static string RequireText(string value, string parameterName, string hint)
         {
@@ -125,7 +138,36 @@ namespace OutSystems.TimeZoneToolkit
                 throw new TimeZoneToolkitException($"{parameterName} is required. {hint}");
             }
 
-            return value.Trim();
+            string trimmed = value.Trim();
+            if (trimmed.Length > MaximumIdentifierLength)
+            {
+                throw new TimeZoneToolkitException(
+                    $"{parameterName} is {trimmed.Length} characters long, and no time zone " +
+                    $"identifier is longer than {MaximumIdentifierLength}. {hint}");
+            }
+
+            return trimmed;
+        }
+
+        /// <summary>
+        /// Prepares a caller supplied value for inclusion in an error message. The value is
+        /// clipped, so a large payload cannot inflate the app's error log, and control characters
+        /// are replaced, because a message carrying a newline can forge an entry in a log
+        /// collector that reads one event per line.
+        /// </summary>
+        private static string ForMessage(string value)
+        {
+            string clipped = value.Length > MaximumIdentifierLength
+                ? string.Concat(value.AsSpan(0, MaximumIdentifierLength), "…")
+                : value;
+
+            return string.Create(clipped.Length, clipped, static (destination, source) =>
+            {
+                for (int i = 0; i < source.Length; i++)
+                {
+                    destination[i] = char.IsControl(source[i]) ? '�' : source[i];
+                }
+            });
         }
 
         /// <summary>
@@ -138,7 +180,7 @@ namespace OutSystems.TimeZoneToolkit
             if (!TZConvert.TryGetTimeZoneInfo(value, out TimeZoneInfo? timeZone))
             {
                 throw new TimeZoneToolkitException(
-                    $"{parameterName} '{value}' is not a valid time zone identifier. {IdentifierHint} " +
+                    $"{parameterName} '{ForMessage(value)}' is not a valid time zone identifier. {IdentifierHint} " +
                     "Use GetSystemTimeZones to list the available identifiers.");
             }
 
@@ -190,7 +232,7 @@ namespace OutSystems.TimeZoneToolkit
             if (value.Length != 2 || !char.IsAsciiLetter(value[0]) || !char.IsAsciiLetter(value[1]))
             {
                 throw new TimeZoneToolkitException(
-                    $"{parameterName} '{country}' is not a valid two-letter ISO 3166-1 country code. Example: \"CA\".");
+                    $"{parameterName} '{ForMessage(value)}' is not a valid two-letter ISO 3166-1 country code. Example: \"CA\".");
             }
 
             return value.ToUpperInvariant();

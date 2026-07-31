@@ -63,8 +63,8 @@ namespace OutSystems.TimeZoneToolkit
         TimeZoneRecord GetTimeZone(string Identifier);
 
         /// <summary>
-        /// Lists every time zone available on the server, ordered by UTC offset and then by display name.
-        /// Use it to fill a time zone dropdown.
+        /// Lists every time zone available on the server, ordered by standard UTC offset and then by
+        /// display name, matching the offset printed in DisplayName. Use it to fill a time zone dropdown.
         /// </summary>
         /// <returns>The list of available time zones.</returns>
         List<TimeZoneRecord> GetSystemTimeZones();
@@ -91,8 +91,8 @@ namespace OutSystems.TimeZoneToolkit
         string ConvertTimeZoneToIANA(string Timezone, string Country);
 
         /// <summary>
-        /// Gets the details of a time zone from its IANA name, reported with the matching
-        /// Windows identifier.
+        /// Gets the details of a time zone from its IANA name. Deprecated names are resolved to
+        /// their current one, so "Asia/Calcutta" reports "Asia/Kolkata".
         /// </summary>
         /// <param name="IANATimezone">The IANA name to look up. Example: "America/New_York".</param>
         /// <returns>The matching time zone details.</returns>

@@ -1,0 +1,28 @@
+version: 2
+
+updates:
+  # Keeps the SHA pins in the workflows current. Pinning without a refresh
+  # process leaves the repo on a vulnerable commit indefinitely.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: deps
+    groups:
+      test-dependencies:
+        patterns:
+          - xunit*
+          - Microsoft.NET.Test.Sdk
+          - coverlet*

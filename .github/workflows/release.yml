@@ -14,16 +14,31 @@ env:
   PRODUCT_NAME: TimeZoneToolkit
 
 jobs:
-  release:
+  # Everything that runs untrusted code — the test host, MSBuild targets from
+  # restored packages, third-party actions, the CycloneDX tool — happens here,
+  # with read-only permissions and no signing identity in the environment.
+  build:
+    name: Build and Test
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      id-token: write
-      attestations: write
+      contents: read
+    outputs:
+      version: ${{ steps.get_version.outputs.VERSION }}
+      zip: ${{ steps.zip.outputs.ZIP }}
 
     steps:
     - name: Checkout Code
       uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      with:
+        fetch-depth: 0
+
+    - name: Verify the tag is on main
+      run: |
+        git fetch --no-tags origin main
+        if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+          echo "::error::Tag $GITHUB_REF_NAME points at $GITHUB_SHA, which is not an ancestor of main. Refusing to release unreviewed code."
+          exit 1
+        fi
 
     - name: Setup .NET
       uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5.2.0
@@ -31,12 +46,14 @@ jobs:
         dotnet-version: '10.0.x'
 
     - name: Restore dependencies
-      run: dotnet restore ${{ env.PROJECT_NAME }}.slnx -r linux-x64
+      run: dotnet restore ${{ env.PROJECT_NAME }}.slnx -r linux-x64 --locked-mode
 
+    # Scans the whole solution, so the test project's dependency graph is
+    # covered too — those packages execute during the build.
     - name: Audit dependencies (fail on any vulnerability, transitive included)
       run: |
         set -o pipefail
-        dotnet list ${{ env.PROJECT_NAME }}/${{ env.PROJECT_NAME }}.csproj package --vulnerable --include-transitive 2>&1 | tee audit.log
+        dotnet list ${{ env.PROJECT_NAME }}.slnx package --vulnerable --include-transitive 2>&1 | tee audit.log
         if grep -E '^\s+>' audit.log; then
           echo "::error::Vulnerable packages detected"
           exit 1
@@ -79,6 +96,9 @@ jobs:
         --no-restore \
         -o ./publish
 
+    - name: Include license and attribution in the package
+      run: cp LICENSE NOTICE ./publish/
+
     - name: Create Versioned Zip
       id: zip
       run: |
@@ -100,19 +120,64 @@ jobs:
           --filename ${{ env.PRODUCT_NAME }}_${{ steps.get_version.outputs.VERSION }}.sbom.json \
           --output-format Json
 
+    - name: Upload release candidate
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: release-candidate
+        path: |
+          ${{ steps.zip.outputs.ZIP }}
+          ${{ steps.zip.outputs.ZIP }}.sha256
+          ./sbom/${{ env.PRODUCT_NAME }}_${{ steps.get_version.outputs.VERSION }}.sbom.json
+        if-no-files-found: error
+        retention-days: 7
+
+  # Holds the signing identity. Runs no project code — it only downloads what
+  # the build job produced, attests it, and publishes.
+  publish:
+    name: Attest and Publish
+    needs: build
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+
+    steps:
+    - name: Download release candidate
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      with:
+        name: release-candidate
+        path: ./artifacts
+
+    - name: Flatten artifact layout
+      run: |
+        find ./artifacts -mindepth 2 -type f -exec mv -t ./artifacts {} +
+        find ./artifacts -mindepth 1 -type d -empty -delete
+        ls -la ./artifacts
+
+    - name: Verify checksum survived transfer
+      working-directory: ./artifacts
+      run: sha256sum -c ${{ needs.build.outputs.zip }}.sha256
+
+    # Every published file is attested, not just the ZIP. Attesting the ZIP
+    # alone leaves the checksum and SBOM replaceable by anyone with write access.
     - name: Attest build provenance
       uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
       with:
-        subject-path: ${{ steps.zip.outputs.ZIP }}
+        subject-path: |
+          ./artifacts/${{ needs.build.outputs.zip }}
+          ./artifacts/${{ needs.build.outputs.zip }}.sha256
+          ./artifacts/${{ env.PRODUCT_NAME }}_${{ needs.build.outputs.version }}.sbom.json
 
     - name: Create GitHub Release
       uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
       with:
         files: |
-          ${{ steps.zip.outputs.ZIP }}
-          ${{ steps.zip.outputs.ZIP }}.sha256
-          ./sbom/${{ env.PRODUCT_NAME }}_${{ steps.get_version.outputs.VERSION }}.sbom.json
-        name: Release ${{ steps.get_version.outputs.VERSION }}
+          ./artifacts/${{ needs.build.outputs.zip }}
+          ./artifacts/${{ needs.build.outputs.zip }}.sha256
+          ./artifacts/${{ env.PRODUCT_NAME }}_${{ needs.build.outputs.version }}.sbom.json
+        name: Release ${{ needs.build.outputs.version }}
         draft: false
         prerelease: false
         generate_release_notes: true
