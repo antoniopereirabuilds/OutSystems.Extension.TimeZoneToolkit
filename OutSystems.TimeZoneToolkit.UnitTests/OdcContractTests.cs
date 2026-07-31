@@ -63,5 +63,69 @@ namespace OutSystems.TimeZoneToolkit.UnitTests
                 typeof(TimeZoneRecord).GetFields(BindingFlags.Public | BindingFlags.Instance),
                 field => Assert.NotNull(field.GetCustomAttribute<OSStructureFieldAttribute>()));
         }
+
+        // ODC Studio shows the SDK attribute descriptions, not the XML comments. An action or
+        // parameter without one appears blank in the toolbox and the property pane.
+
+        [Fact]
+        public void EveryActionHasADescriptionAndANamedReturn()
+        {
+            foreach (MethodInfo action in typeof(ITimeZoneToolkit).GetMethods())
+            {
+                OSActionAttribute? attribute = action.GetCustomAttribute<OSActionAttribute>();
+                Assert.True(attribute is not null, $"{action.Name} has no [OSAction].");
+
+                Assert.False(string.IsNullOrWhiteSpace(attribute!.Description),
+                    $"{action.Name} has no description.");
+                Assert.False(string.IsNullOrWhiteSpace(attribute.ReturnName),
+                    $"{action.Name} has no ReturnName.");
+                Assert.False(string.IsNullOrWhiteSpace(attribute.ReturnDescription),
+                    $"{action.Name} has no ReturnDescription.");
+            }
+        }
+
+        [Fact]
+        public void EveryParameterHasADescription()
+        {
+            foreach (MethodInfo action in typeof(ITimeZoneToolkit).GetMethods())
+            {
+                foreach (ParameterInfo parameter in action.GetParameters())
+                {
+                    OSParameterAttribute? attribute = parameter.GetCustomAttribute<OSParameterAttribute>();
+                    Assert.True(attribute is not null,
+                        $"{action.Name}.{parameter.Name} has no [OSParameter].");
+                    Assert.False(string.IsNullOrWhiteSpace(attribute!.Description),
+                        $"{action.Name}.{parameter.Name} has no description.");
+                }
+            }
+        }
+
+        [Fact]
+        public void EveryStructureFieldHasADescription()
+        {
+            Assert.False(string.IsNullOrWhiteSpace(
+                typeof(TimeZoneRecord).GetCustomAttribute<OSStructureAttribute>()!.Description));
+
+            foreach (FieldInfo field in typeof(TimeZoneRecord).GetFields(BindingFlags.Public | BindingFlags.Instance))
+            {
+                OSStructureFieldAttribute attribute = field.GetCustomAttribute<OSStructureFieldAttribute>()!;
+                Assert.False(string.IsNullOrWhiteSpace(attribute.Description),
+                    $"TimeZoneRecord.{field.Name} has no description.");
+            }
+        }
+
+        [Fact]
+        public void NoReturnNameCollidesWithAnInputParameter()
+        {
+            // ODC exposes the return as an output parameter, so a name shared with an input
+            // is rejected when the library is uploaded.
+            foreach (MethodInfo action in typeof(ITimeZoneToolkit).GetMethods())
+            {
+                string returnName = action.GetCustomAttribute<OSActionAttribute>()!.ReturnName!;
+                string[] inputs = action.GetParameters().Select(p => p.Name!).ToArray();
+
+                Assert.DoesNotContain(returnName, inputs, StringComparer.OrdinalIgnoreCase);
+            }
+        }
     }
 }

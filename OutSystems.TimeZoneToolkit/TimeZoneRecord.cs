@@ -21,9 +21,10 @@ namespace OutSystems.TimeZoneToolkit
         public string StandardName;
 
         /// <summary>
-        /// The name suitable for showing to end users. Example: "(UTC+09:00) Osaka, Sapporo, Tokyo".
+        /// The name suitable for showing to end users. Example: "(UTC+09:00) Japan Standard Time (Tokyo)".
+        /// Can reach 64 characters, so allow for that if you store it.
         /// </summary>
-        [OSStructureField(Description = "The name suitable for showing to end users. Example: \"(UTC+09:00) Osaka, Sapporo, Tokyo\".")]
+        [OSStructureField(Description = "The label to show end users, offset included. Example: \"(UTC+09:00) Japan Standard Time (Tokyo)\". Can reach 64 characters, so allow for that if you store it.")]
         public string DisplayName;
 
         /// <summary>
