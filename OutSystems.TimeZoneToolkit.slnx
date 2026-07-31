@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="OutSystems.TimeZoneToolkit.UnitTests/OutSystems.TimeZoneToolkit.UnitTests.csproj" />
+  <Project Path="OutSystems.TimeZoneToolkit/OutSystems.TimeZoneToolkit.csproj" />
+</Solution>
