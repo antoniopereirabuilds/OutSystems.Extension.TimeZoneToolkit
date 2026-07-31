@@ -9,6 +9,12 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!-- Time zone lookups need the ICU data shipped with the runtime image. -->
     <InvariantGlobalization>false</InvariantGlobalization>
+    <!-- ODC runs the library on linux-x64; naming it keeps the lock file stable. -->
+    <RuntimeIdentifiers>linux-x64</RuntimeIdentifiers>
+    <!-- Restore verifies package hashes against packages.lock.json. -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <!-- Normalizes source paths in the PDB so a release build is reproducible. -->
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
   </PropertyGroup>
 
   <ItemGroup>

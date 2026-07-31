@@ -163,6 +163,73 @@ namespace OutSystems.TimeZoneToolkit.UnitTests
         }
 
         [Fact]
+        public void OversizedInput_IsRejectedWithoutEchoingThePayload()
+        {
+            // A megabyte identifier previously produced a megabyte error message, which the app
+            // then wrote to its error log on every call.
+            string payload = new('A', 1_000_000);
+
+            TimeZoneToolkitException error = Assert.Throws<TimeZoneToolkitException>(
+                () => _toolkit.GetTimeZone(payload));
+
+            Assert.DoesNotContain(payload, error.Message);
+            Assert.True(error.Message.Length < 300, $"Message was {error.Message.Length} characters.");
+            Assert.Contains("1000000 characters long", error.Message);
+        }
+
+        [Fact]
+        public void LongestRealIdentifier_IsStillAccepted()
+        {
+            // The bound must not reject anything the database actually contains.
+            string longest = _toolkit.GetSystemTimeZones()
+                .Select(record => record.Identifier)
+                .OrderByDescending(identifier => identifier.Length)
+                .First();
+
+            Assert.NotNull(_toolkit.GetTimeZone(longest).Identifier);
+        }
+
+        [Fact]
+        public void ControlCharactersInInput_DoNotReachTheMessage()
+        {
+            // A newline in an echoed value can forge an entry in a line-oriented log collector.
+            string forged = "Europe/Lisbon" + (char)0x0A + "FATAL forged log line";
+
+            TimeZoneToolkitException error = Assert.Throws<TimeZoneToolkitException>(
+                () => _toolkit.GetTimeZone(forged));
+
+            Assert.DoesNotContain('\n', error.Message);
+            Assert.DoesNotContain('\r', error.Message);
+            Assert.Contains("forged log line", error.Message); // still readable, just defanged
+        }
+
+        [Fact]
+        public void OversizedCountry_IsClippedInTheMessage()
+        {
+            // Country is not an identifier, so it does not pass through the length gate; the
+            // message builder has to clip it on its own.
+            string payload = new('Z', 50_000);
+
+            TimeZoneToolkitException error = Assert.Throws<TimeZoneToolkitException>(
+                () => _toolkit.ConvertTimeZoneToIANA("Eastern Standard Time", payload));
+
+            Assert.DoesNotContain(payload, error.Message);
+            Assert.Contains("…", error.Message);
+            Assert.True(error.Message.Length < 300, $"Message was {error.Message.Length} characters.");
+        }
+
+        [Fact]
+        public void ControlCharactersInCountry_DoNotReachTheMessage()
+        {
+            string forged = (char)0x0A + "FAKE" + (char)0x0A;
+
+            TimeZoneToolkitException error = Assert.Throws<TimeZoneToolkitException>(
+                () => _toolkit.ConvertTimeZoneToIANA("Eastern Standard Time", forged));
+
+            Assert.DoesNotContain('\n', error.Message);
+        }
+
+        [Fact]
         public void GetIANATimeZone_UnknownName_IsRejected()
         {
             TimeZoneToolkitException error = Assert.Throws<TimeZoneToolkitException>(

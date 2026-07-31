@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using OutSystems.TimeZoneToolkit;
 
 namespace OutSystems.TimeZoneToolkit.UnitTests
@@ -76,17 +77,36 @@ namespace OutSystems.TimeZoneToolkit.UnitTests
         }
 
         [Fact]
-        public void GetSystemTimeZones_IsOrderedByTheOffsetItReports()
+        public void GetSystemTimeZones_IsOrderedByTheOffsetPrintedInTheLabel()
         {
+            // A dropdown is read top to bottom, so the offset inside DisplayName is what has to
+            // run in order. Sorting on the current UtcOffset instead displaces every zone that
+            // happens to be on daylight saving time today.
             List<TimeZoneRecord> records = _toolkit.GetSystemTimeZones();
 
             for (int i = 1; i < records.Count; i++)
             {
                 Assert.True(
-                    records[i - 1].UtcOffset <= records[i].UtcOffset,
-                    $"'{records[i - 1].Identifier}' ({records[i - 1].UtcOffset}) sorted before " +
-                    $"'{records[i].Identifier}' ({records[i].UtcOffset}).");
+                    LabelOffset(records[i - 1].DisplayName) <= LabelOffset(records[i].DisplayName),
+                    $"'{records[i - 1].DisplayName}' sorted before '{records[i].DisplayName}'.");
             }
+        }
+
+        /// <summary>
+        /// Reads the offset out of a label such as "(UTC-03:30) Newfoundland Time (St John's)".
+        /// </summary>
+        private static int LabelOffset(string displayName)
+        {
+            Match match = Regex.Match(displayName, @"^\(UTC(?:([+-])(\d{2}):(\d{2}))?\)");
+            Assert.True(match.Success, $"Unrecognised label format: '{displayName}'.");
+
+            if (!match.Groups[1].Success)
+            {
+                return 0;
+            }
+
+            int magnitude = (int.Parse(match.Groups[2].Value) * 60) + int.Parse(match.Groups[3].Value);
+            return match.Groups[1].Value == "-" ? -magnitude : magnitude;
         }
 
         [Fact]
@@ -146,6 +166,46 @@ namespace OutSystems.TimeZoneToolkit.UnitTests
             Assert.True(record.SupportsDaylightSaving);
             Assert.Contains(record.UtcOffset, new[] { -300, -240 });
             Assert.Equal(_toolkit.GetTimeZone("Eastern Standard Time"), record);
+        }
+
+        [Theory]
+        [InlineData("Antarctica/Casey", 480)]      // was returning Pacific/Guadalcanal, +3 hours out
+        [InlineData("Antarctica/Vostok", 300)]     // was returning Asia/Bishkek, +1 hour out
+        [InlineData("America/Scoresbysund", -60)]  // was returning Atlantic/Azores, +1 hour out
+        public void GetIANATimeZone_ReturnsTheZoneAsked_NotItsWindowsApproximation(string iana, int expectedOffset)
+        {
+            // One Windows identifier stands in for many IANA zones, so resolving through a Windows
+            // identifier silently substituted a different zone. These offsets are fixed year round.
+            TimeZoneRecord record = _toolkit.GetIANATimeZone(iana);
+
+            Assert.Equal(iana, record.Identifier);
+            Assert.Equal(expectedOffset, record.UtcOffset);
+        }
+
+        [Fact]
+        public void GetIANATimeZone_AgreesWithGetTimeZoneForTheSameName()
+        {
+            foreach (string iana in new[] { "America/Toronto", "Europe/Dublin", "Antarctica/Casey", "Asia/Tokyo" })
+            {
+                Assert.Equal(_toolkit.GetTimeZone(iana), _toolkit.GetIANATimeZone(iana));
+            }
+        }
+
+        [Fact]
+        public void GetIANATimeZone_AcceptsAZoneWithNoWindowsEquivalent()
+        {
+            // Antarctica/Troll has no Windows identifier, so the old Windows hop rejected it.
+            TimeZoneRecord record = _toolkit.GetIANATimeZone("Antarctica/Troll");
+
+            Assert.Equal("Antarctica/Troll", record.Identifier);
+        }
+
+        [Theory]
+        [InlineData("Asia/Calcutta", "Asia/Kolkata")]
+        [InlineData("Asia/Katmandu", "Asia/Kathmandu")]
+        public void GetIANATimeZone_ResolvesDeprecatedNames(string deprecated, string current)
+        {
+            Assert.Equal(current, _toolkit.GetIANATimeZone(deprecated).Identifier);
         }
 
         [Fact]
