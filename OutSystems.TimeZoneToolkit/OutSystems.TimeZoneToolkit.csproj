@@ -24,7 +24,7 @@
 
   <ItemGroup>
     <PackageReference Include="OutSystems.ExternalLibraries.SDK" Version="1.5.0" />
-    <PackageReference Include="TimeZoneConverter" Version="7.2.0" />
+    <PackageReference Include="TimeZoneConverter" Version="8.0.0" />
   </ItemGroup>
 
 </Project>
